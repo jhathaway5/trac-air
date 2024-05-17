@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Real-time Aircraft Map</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <style>
+    #map { height: 100vh; }
+    #data-info {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: white;
+      padding: 5px;
+      z-index: 1000;
+    }
+    #aircraft-count {
+      position: absolute;
+      top: 40px;
+      right: 10px;
+      background: white;
+      padding: 5px;
+      z-index: 1000;
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <div id="data-info">Data freshness: <span id="data-time">Loading...</span></div>
+  <div id="aircraft-count">Aircraft in view: <span id="aircraft-total">0</span></div>
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script>
+    // Center the map around Tulsa, Oklahoma
+    const map = L.map('map').setView([36.154, -95.9928], 10);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors'
+    }).addTo(map);
+
+    let markers = [];
+    const updateInterval = 10000; // 10 seconds
+
+    // Define the bounding box for a 100 square mile area around Tulsa
+    const boundingBoxSize = 10; // Approximate size for simplicity
+    const minLat = 36.154 - 0.05 * boundingBoxSize;
+    const maxLat = 36.154 + 0.05 * boundingBoxSize;
+    const minLon = -95.9928 - 0.05 * boundingBoxSize;
+    const maxLon = -95.9928 + 0.05 * boundingBoxSize;
+
+    async function fetchAircraftData() {
+      const apiUrl = `https://opensky-network.org/api/states/all?lamin=${minLat}&lomin=${minLon}&lamax=${maxLat}&lomax=${maxLon}`;
+      try {
+        const response = await fetch(apiUrl);
+        if (!response.ok) {
+          throw new Error('Network response was not ok');
+        }
+        const data = await response.json();
+        console.log('Fetched data:', data); // Debugging: Log fetched data
+        updateMap(data.states);
+        updateTimestamp();
+      } catch (error) {
+        console.error('Error fetching aircraft data:', error);
+      }
+    }
+
+    function updateMap(states) {
+      // Clear existing markers
+      markers.forEach(marker => map.removeLayer(marker));
+      markers = [];
+
+      // Add new markers
+      let aircraftCount = 0;
+      if (states) {
+        states.forEach(state => {
+          const [icao24, callsign, country, time_position, last_contact, longitude, latitude, baro_altitude, on_ground, velocity, true_track, vertical_rate, sensors, geo_altitude, squawk, spi, position_source] = state;
+          if (latitude && longitude) {
+            console.log(`Adding marker at: ${latitude}, ${longitude}`); // Debugging: Log marker coordinates
+            const marker = L.marker([latitude, longitude], {
+              icon: L.divIcon({
+                className: 'custom-icon',
+                html: `<div style="background-color: red; width: 10px; height: 10px; border-radius: 50%;"></div>`,
+                iconSize: [10, 10],
+              }),
+            }).addTo(map);
+            marker.bindPopup(`
+              <b>Callsign:</b> ${callsign || 'N/A'}<br>
+              <b>Country:</b> ${country}<br>
+              <b>Altitude:</b> ${baro_altitude} m<br>
+              <b>Last Seen:</b> ${new Date(last_contact * 1000).toLocaleString()}
+            `);
+            markers.push(marker);
+            aircraftCount++;
+          }
+        });
+      } else {
+        console.warn('No states data available');
+      }
+      document.getElementById('aircraft-total').textContent = aircraftCount;
+    }
+
+    function updateTimestamp() {
+      const now = new Date();
+      document.getElementById('data-time').textContent = now.toLocaleTimeString();
+    }
+
+    // Fetch initial data and set interval for updates
+    fetchAircraftData();
+    setInterval(fetchAircraftData, updateInterval);
+  </script>
+</body>
+</html>
